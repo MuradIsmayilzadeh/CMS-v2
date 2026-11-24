@@ -1,0 +1,71 @@
+/* Apply styles to the login container */
+.admin-login-container {
+    color: #000000; /* Black text color */
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    width: 80%;
+    height: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    transition: transform 0.3s ease-in-out;
+}
+
+.admin-login-container:hover {
+    transform: translate(-50%, -50%) scale(1.01); /* Scale and slightly move on hover for animation */
+}
+
+h1 {
+    font-size: 28px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+}
+
+input[type="text"],
+input[type="password"] {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-color: #000000;
+    border-radius: 5px;
+    font-size: 16px;
+    margin-top: 5px;
+    margin-bottom: 10px;
+}
+
+.error-message {
+    color: red;
+    font-size: 14px;
+    margin-top: 10px;
+    display: none;
+}
+
+.login-button {
+    background-color: #007BFF; /* Blue button color */
+    color: #ffffff;
+    border: none;
+    width: 80%;
+    margin-top: 10px;
+    padding: 10px 20px;
+    font-size: 18px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.login-button:hover {
+    background-color: #d905ff; /* Darker blue on hover */
+}

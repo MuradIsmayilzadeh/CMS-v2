@@ -1,0 +1,56 @@
+/* page.css */
+
+/* Center the container horizontally and vertically */
+.contest-inspect-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 85vh; /* Center within the viewport with a minimum height */
+    background-color: #f8f8f8;
+    padding: 20px;
+  }
+  
+  /* Loading spinner styles */
+  .loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%; /* Center the spinner vertically */
+  }
+  
+  /* Error message styles */
+  .error-message {
+    color: red;
+    font-size: 18px;
+  }
+  
+  /* Contest details styles */
+  .contest-details {
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    background-color: #ffffff;
+    box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
+  }
+  
+  .contest-details h1 {
+    font-size: 24px;
+    margin-bottom: 10px;
+  }
+  
+  .contest-details .description {
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+  
+  .contest-details p {
+    font-size: 16px;
+    margin-bottom: 5px;
+  }
+  
+  /* Customize and add more styles as needed */
+  

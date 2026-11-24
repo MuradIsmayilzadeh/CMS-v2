@@ -1,0 +1,106 @@
+/* Reset margin and padding for the body element */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+a {
+  text-decoration: none;
+  color: #0071ff;
+}
+
+a:hover {
+  color: #16abff;
+}
+
+/* Styles for main content container */
+.main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 6rem;
+  min-height: 50vh;
+}
+
+/* Contest item styles */
+.contestContainer {
+  display: flex;
+  flex-direction: column; /* Display contests above each other */
+  gap: 1rem; /* Adjust the gap between contests */
+  width: 100%; /* Make sure contests take up the full width */
+}
+
+.contestItem {
+  background-color: #fff;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: transform 0.2s ease-in-out;
+  text-align: left; /* Align contest content to the left */
+}
+
+.contestItem:hover {
+  transform: scale(1.02);
+}
+
+.contestItem h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.contestItem p {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: #555;
+}
+
+/* Rest of your CSS styles... */
+.contestCard {
+  display: flex;
+  justify-content: space-between;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.contestCard:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.contestInfo {
+  flex: 2;
+}
+
+.contestInfo h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.contestInfo .author {
+  font-weight: bold;
+}
+.loadingContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 90vh; /* Adjust the height as needed */
+} 
+
+.contestTime {
+  flex: 1;
+  text-align: right;
+}
+
+.contestTime p {
+  font-size: 1rem;
+  margin: 0;
+  color: #888;
+}
