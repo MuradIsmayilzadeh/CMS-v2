@@ -1,91 +1,99 @@
-"use client"
-import React, { useState, useEffect } from 'react';
-import Spinner from '@/app/components/spinner';
+"use client";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+import { api, API_URL, contestStatus, fmtDate } from "../../../lib/api";
 
-
-export default function ContestInspectPage({params}) {
-  const {id} = params
-  const [contestData, setContest] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function ContestInspectPage({ params }) {
+  const { id } = params;
+  const router = useRouter();
+  const [contest, setContest] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // Check if the contest ID is available in the query parameters
-    if (id) {
-      // Fetch contest data using the contest ID from the query parameters
-      async function fetchContest() {
-        try {
-          setLoading(true); // Set loading to true when fetching data
-          const response = await fetch(`http://89.147.236.58:8000/api/contest/${id}`);
-          if (!response.ok) {
-            throw new Error(`HTTP Error: ${response.status}`);
-          }
-          const contestData = await response.json();
-          setContest(contestData);
-        } catch (error) {
-          setError(error);
-        } finally {
-          setLoading(false); // Set loading to false when data is fetched (regardless of success or error)
-        }
-      }
+    const token = Cookies.get("adminToken");
+    if (!token) return router.replace("/adminlogin");
+    api(`/api/admin/contest/${id}`, { token })
+      .then(setContest)
+      .catch((e) => {
+        if (e.message.includes("authentication")) {
+          Cookies.remove("adminToken");
+          router.replace("/adminlogin");
+        } else setError(e.message);
+      });
+  }, [id, router]);
 
-      fetchContest();
-    }
-  }, [id]);
+  if (error) return <main className="container page"><p className="alert">{error}</p></main>;
+  if (!contest) return <main className="container page"><div className="card skeleton" /></main>;
+
+  const status = contestStatus(contest);
+  const questionName = (qid) => contest.questions.find((q) => q.questionId === qid)?.name || qid;
+  const submissions = contest.allowedUsers.flatMap((u) => u.submissions.map((s) => ({ ...s, username: u.username })));
 
   return (
-    <div className="contest-inspect-container">
-      {loading ? (
-        // Display a loading spinner while fetching data
-        <div className="loading-spinner">
-          <img src="spinner.gif" alt="Loading" />
+    <main className="container page">
+      <Link href="/admin-dashboard" className="muted">← Dashboard</Link>
+      <div className="card panel" style={{ marginTop: 14 }}>
+        <span className={`pill ${status.key}`}>{status.label}</span>
+        <h1>{contest.name}</h1>
+        <p className="muted">{contest.description}</p>
+        <div className="stat-grid">
+          <div className="stat"><span>Author</span><strong>{contest.author}</strong></div>
+          <div className="stat"><span>Starts</span><strong>{fmtDate(contest.startTime)}</strong></div>
+          <div className="stat"><span>Ends</span><strong>{fmtDate(contest.endTime)}</strong></div>
+          <div className="stat"><span>Submissions</span><strong>{submissions.length}</strong></div>
         </div>
-      ) : error ? (
-        // Display an error message if there's an error
-        <div className="error-message">Error: {error.message}</div>
-      ) : contestData ? (
-        // Display the contest data if available
-        <div className="contest-details">
-          <h1>{contestData.name}</h1>
-          <p className="description">{contestData.description}</p>
-          <p>Author: {contestData.author}</p>
-          <p>Start Time: {new Date(contestData.startTime).toLocaleString()}</p>
-          <p>End Time: {new Date(contestData.endTime).toLocaleString()}</p>
+      </div>
 
-          <h2>Allowed Users:</h2>
-          <ul>
-            {contestData.allowedUsers.map((user) => (
-              <li key={user.userId}>
-                <p>Username: {user.username}</p>
-                <p>Password: {user.password}</p>
-                <h3>Submissions:</h3>
-                <ul>
-                  {user.submissions.map((submission) => (
-                    <li key={submission._id}>
-                      <p>Question ID: {submission.questionId}</p>
-                      <p>Result: {submission.result}</p>
-                      <p>File Path: {submission.filePath}</p>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-
-          <h2>Questions:</h2>
-          <ul>
-            {contestData.questions.map((question) => (
-              <li key={question.questionId}>
-                <p>Question ID: {question.questionId}</p>
-                <p>Name: {question.name}</p>
-              </li>
-            ))}
-          </ul>
+      <div className="admin-grid" style={{ marginTop: 20 }}>
+        <div className="card panel">
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 12 }}>Problems</h2>
+          <table className="table">
+            <thead><tr><th>#</th><th>Title</th><th>Statement</th></tr></thead>
+            <tbody>
+              {contest.questions.map((q) => (
+                <tr key={q.questionId}>
+                  <td><span className="qid">{q.questionId}</span></td>
+                  <td>{q.name}</td>
+                  <td>{q.conditionUrl ? <a className="link" href={q.conditionUrl} target="_blank" rel="noopener noreferrer">Open</a> : <span className="muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        // Display a message if no data is available
-        <div>No contest data available.</div>
-      )}
-    </div>
+        <div className="card panel">
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 12 }}>Participants</h2>
+          <table className="table">
+            <thead><tr><th>Username</th><th>Password</th><th>Submissions</th></tr></thead>
+            <tbody>
+              {contest.allowedUsers.map((u) => (
+                <tr key={u.userId}><td>{u.username}</td><td className="mono">{u.password}</td><td>{u.submissions.length}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card panel" style={{ marginTop: 20 }}>
+        <h2 style={{ fontSize: "1.1rem", marginBottom: 12 }}>Submissions</h2>
+        {submissions.length === 0 ? <p className="muted">No submissions yet.</p> : (
+          <table className="table">
+            <thead><tr><th>Participant</th><th>Problem</th><th>Submitted</th><th>Result</th><th>File</th></tr></thead>
+            <tbody>
+              {submissions.map((s, i) => (
+                <tr key={s._id || i}>
+                  <td>{s.username}</td>
+                  <td>{questionName(s.questionId)}</td>
+                  <td>{s.submittedAt ? fmtDate(s.submittedAt) : "—"}</td>
+                  <td>{s.result}</td>
+                  <td><a className="link" href={`${API_URL}/api/files/${encodeURIComponent(s.filePath.replace(/^files\//, ""))}`}>Download</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </main>
   );
 }

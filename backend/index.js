@@ -1,218 +1,134 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const mongoose = require('mongoose'); // Import the MongoDB connection
-const fileUpload = require('express-fileupload');
-const path = require('path');
-const fs = require('fs');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const fileUpload = require("express-fileupload");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const path = require("path");
+const fs = require("fs");
+const createStore = require("./store");
+const { newId } = require("./store");
+
+const PORT = process.env.PORT || 8000;
+const JWT_SECRET = process.env.JWT_SECRET || "dev-only-secret-change-me";
+const FILES_DIR = path.join(__dirname, "files");
+fs.mkdirSync(FILES_DIR, { recursive: true });
 
 const app = express();
-const port = process.env.PORT || 8000;
-
-// MongoDB connection setup
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-const db = mongoose.connection;
-
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-db.once('open', () => {
-  console.log('Connected to MongoDB');
-});
-
-// Middleware
-app.use(bodyParser.json());
 app.use(cors());
+app.use(express.json());
+app.use(fileUpload({ limits: { fileSize: 10 * 1024 * 1024 }, abortOnLimit: true }));
 
-// Admins schema and model
-const adminsSchema = new mongoose.Schema({
-  authorname:String,
-  username: String,
-  password: String,
-});
+// Remove participant passwords from public responses.
+const publicContest = (c) => ({ ...c, allowedUsers: (c.allowedUsers || []).map(({ password, ...u }) => u) });
 
-const Admins = mongoose.model('Admins', adminsSchema);
-
-const contestsSchema = new mongoose.Schema({
-    name: String,
-    description: String,
-    startTime: Date,
-    endTime: Date,
-    author:String,
-    allowedUsers: [{ 
-    userId: String, // User ID
-    username: String, // User's username
-    password:String,
-    submissions: [{
-      questionId: String, 
-      result:String,
-      filePath:String,
-    }], }],
-});
-  
-const Contests = mongoose.model('Contests', contestsSchema);
-app.get('/api/contest/:contestId', async (req, res) => {
-  const { contestId } = req.params;
-
+const requireAdmin = (req, res, next) => {
+  const token = (req.header("Authorization") || "").replace(/^Bearer /, "");
   try {
-    const contest = await Contests.findById(contestId);
-
-    if (!contest) {
-      return res.status(404).json({ message: 'Contest not found' });
-    }
-
-    res.status(200).json(contest);
-  } catch (error) {
-    console.error('Error fetching contest by ID:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    req.admin = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ message: "Admin authentication required" });
   }
-});
+};
 
-
-app.get('/api/contests', async (req, res) => {
-    try {
-        const contests = await Contests.find();
-        res.status(200).json(contests);
-    } catch (error) {
-        console.error('Error fetching contests:', error);
-        res.status(500).json({ message: 'Internal server error' });
-    }
-});
-app.get('/api/files/:filename', (req, res) => {
-  const { filename } = req.params;
-  
-  // Construct the full path to the requested file
-  const filePath = path.join(__dirname, 'files', filename);
-  
-  // Check if the file exists
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ message: 'File not found' });
-  }
-  
-  // Stream the file as a response
-  res.sendFile(filePath);
-});
-
-app.post('/api/admin/login', async (req, res) => {
-  const { username, password } = req.body;
-
+const requireParticipant = (req, res, next) => {
+  const token = (req.header("Authorization") || "").replace(/^Bearer /, "");
   try {
-    const admin = await Admins.findOne({ username });
-
-    if (!admin) {
-      return res.status(404).json({ message: 'Admin not found' });
-    }
-
-    // Compare the provided password with the stored password
-    if (admin.password !== password) {
-      return res.status(401).json({ message: 'Invalid username or password' });
-    }
-
-    // Admin is authenticated, return admin data
-    res.status(200).json(admin);
-  } catch (error) {
-    console.error('Error during admin login:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.contestId !== req.params.contestId) throw new Error("wrong contest");
+    req.participant = payload;
+    next();
+  } catch {
+    res.status(401).json({ message: "Please log in to this contest" });
   }
-});
+};
 
+createStore().then((store) => {
+  console.log(`Using ${store.kind} storage`);
 
-
-
-app.post('/api/contest/:contestId/submit', async (req, res) => {
-    const { contestId } = req.params;
-    const { userId, questionId } = req.body;
-  
-    try {
-      const contest = await Contests.findById(contestId);
-  
-      if (!contest) {
-        return res.status(404).json({ message: 'Contest not found' });
-      }
-  
-      // Get the uploaded file
-      const file = req.body.file;
-  
-      // Check if the file is valid
-      if (!file || file.size > 1024 * 1024 * 10) {
-        return res.status(400).json({ message: 'Invalid file' });
-      }
-  
-      // Generate a unique file name
-      const fileName = `${userId}_${questionId}_${file.name}`;
-  
-      // Save the uploaded file
-      file.mv(`files/${fileName}`, (err) => {
-        if (err) {
-          console.error('Error saving file:', err);
-          return res.status(500).json({ message: 'Error saving file' });
-        }
-  
-        // Find the user within the allowedUsers array based on userId
-        const user = contest.allowedUsers.find((u) => u.userId === userId);
-        if (!user) {
-          return res.status(404).json({ message: 'User not found' });
-        }
-  
-        // Update the user's submissions array
-        user.submissions.push({
-          questionId,
-          result: 0, // Set the initial result to 0 or any other default value
-          filePath: `files/${fileName}`,
-        });
-  
-        contest.save()
-          .then(() => {
-            console.log('File saved successfully');
-            res.status(200).json({ message: 'File submitted successfully' });
-          })
-          .catch((error) => {
-            console.error('Error saving contest:', error);
-            res.status(500).json({ message: 'Error saving contest' });
-          });
-      });
-    } catch (error) {
-      console.error('Error during submission:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
+  app.get("/api/contests", async (req, res) => {
+    const contests = await store.listContests();
+    res.json(contests.map(({ allowedUsers, ...c }) => ({ ...c, participants: (allowedUsers || []).length })));
   });
-  
-app.post('/api/contest/:id/login', async (req, res) => {
-    const { id } = req.params;
-    const { username, password } = req.body;
-    try {
-        const contest = await Contests.findById(id);
-        
-        if (!contest) {
-            return res.status(404).json({ message: 'Contest not found' });
-        }
-        
-        // Check if the username and password exist
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Username and password are required' });
-        }
-        
-        // Find the user with the provided username
-        const user = contest.allowedUsers.find((u) => u.username === username);
-        
-        if (!user) {
-            return res.status(403).json({ message: 'User is not allowed in this contest' });
-        }
-        
-        // Compare the provided password with the stored password
-        if (user.password !== password) {
-            return res.status(401).json({ message: 'Invalid username or password' });
-        }
-        
-        // User is authenticated, return user data
-        res.status(200).json(user);
-    } catch (error) {
-        console.error('Error during login:', error);
-        res.status(500).json({ message: 'Internal server error' });
-    }
-});
 
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+  app.get("/api/contest/:contestId", async (req, res) => {
+    const contest = await store.getContest(req.params.contestId);
+    if (!contest) return res.status(404).json({ message: "Contest not found" });
+    res.json(publicContest(contest));
+  });
+
+  app.post("/api/contest/:contestId/login", async (req, res) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ message: "Username and password are required" });
+    const contest = await store.getContest(req.params.contestId);
+    if (!contest) return res.status(404).json({ message: "Contest not found" });
+    const user = contest.allowedUsers.find((u) => u.username === username);
+    if (!user) return res.status(403).json({ message: "You are not registered for this contest" });
+    if (user.password !== password) return res.status(401).json({ message: "Invalid username or password" });
+    const token = jwt.sign({ contestId: req.params.contestId, userId: user.userId, username }, JWT_SECRET, { expiresIn: "1d" });
+    res.json({ token, userId: user.userId, username });
+  });
+
+  app.post("/api/contest/:contestId/submit", requireParticipant, async (req, res) => {
+    const { questionId } = req.body || {};
+    const file = req.files && req.files.file;
+    if (!file || !questionId) return res.status(400).json({ message: "A question and a .cpp file are required" });
+    if (!/\.(cpp|cc|cxx)$/i.test(file.name)) return res.status(400).json({ message: "Only C++ source files are accepted" });
+
+    const contest = await store.getContest(req.params.contestId);
+    const now = Date.now();
+    if (!contest) return res.status(404).json({ message: "Contest not found" });
+    if (now < new Date(contest.startTime).getTime()) return res.status(403).json({ message: "The contest has not started yet" });
+    if (now > new Date(contest.endTime).getTime()) return res.status(403).json({ message: "The contest has ended" });
+
+    const safeName = `${req.participant.userId}_${questionId}_${Date.now()}_${path.basename(file.name).replace(/[^\w.-]/g, "_")}`;
+    await file.mv(path.join(FILES_DIR, safeName));
+    const ok = await store.addSubmission(contest._id, req.participant.userId, { questionId, result: "Pending", filePath: safeName, submittedAt: new Date().toISOString() });
+    if (!ok) return res.status(404).json({ message: "Participant not found" });
+    res.json({ message: "File submitted successfully" });
+  });
+
+  app.get("/api/files/:filename", (req, res) => {
+    const filePath = path.join(FILES_DIR, path.basename(req.params.filename));
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+    res.download(filePath);
+  });
+
+  // ---- Admin ----
+  app.post("/api/admin/login", async (req, res) => {
+    const { username, password } = req.body || {};
+    const admin = username && (await store.findAdmin(username));
+    const valid = admin && (admin.password.startsWith("$2") ? await bcrypt.compare(password || "", admin.password) : admin.password === password);
+    if (!valid) return res.status(401).json({ message: "Invalid username or password" });
+    const token = jwt.sign({ username: admin.username, authorname: admin.authorname }, JWT_SECRET, { expiresIn: "1d" });
+    res.json({ token, username: admin.username, authorname: admin.authorname });
+  });
+
+  app.get("/api/admin/contest/:contestId", requireAdmin, async (req, res) => {
+    const contest = await store.getContest(req.params.contestId);
+    if (!contest) return res.status(404).json({ message: "Contest not found" });
+    res.json(contest);
+  });
+
+  app.post("/api/admin/contests", requireAdmin, async (req, res) => {
+    const { name, description, startTime, endTime, questions = [], allowedUsers = [] } = req.body || {};
+    if (!name || !startTime || !endTime) return res.status(400).json({ message: "Name, start and end time are required" });
+    if (new Date(endTime) <= new Date(startTime)) return res.status(400).json({ message: "End time must be after start time" });
+    const contest = await store.createContest({
+      name,
+      description: description || "",
+      author: req.admin.authorname || req.admin.username,
+      startTime: new Date(startTime).toISOString(),
+      endTime: new Date(endTime).toISOString(),
+      questions: questions.filter((q) => q.name).map((q, i) => ({ questionId: q.questionId || String.fromCharCode(65 + i), name: q.name, conditionUrl: q.conditionUrl || "" })),
+      allowedUsers: allowedUsers.filter((u) => u.username && u.password).map((u) => ({ userId: newId(), username: u.username, password: u.password, submissions: [] })),
+    });
+    res.status(201).json(contest);
+  });
+
+  app.listen(PORT, () => console.log(`CMS API running on http://localhost:${PORT}`));
+}).catch((err) => {
+  console.error("Failed to start:", err.message);
+  process.exit(1);
 });

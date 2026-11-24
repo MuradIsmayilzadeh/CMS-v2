@@ -1,21 +1,21 @@
-import { Inter } from 'next/font/google'
-import React from 'react';
-import Navbar from './components/navbar';
+import { Inter } from "next/font/google";
+import Navbar from "./components/navbar";
+import "./globals.css";
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: 'Contest Managament System',
-  description: 'System developed directly for managing Programming Contests',
-}
+  title: "CMS v2 — Contest Management System",
+  description: "Host and run programming contests: participants submit C++ solutions, admins manage contests.",
+};
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-      <Navbar />
+        <Navbar />
         {children}
       </body>
     </html>
-  )
+  );
 }

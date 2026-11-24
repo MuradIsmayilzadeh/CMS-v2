@@ -1,91 +1,44 @@
-"use client"
-import React, { useEffect, useState } from 'react';
-import './page.css'; // Import your CSS file here
-import LoadingAnimation from '@/app/components/spinner'; // Import your spinner component
+"use client";
+import { useEffect, useState } from "react";
+import { api, contestStatus } from "./lib/api";
+import ContestRow from "./components/ContestRow";
+
+const groups = [
+  ["live", "Live now"],
+  ["upcoming", "Upcoming"],
+  ["ended", "Past contests"],
+];
 
 export default function Home() {
-  const [contestData, setContestData] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [contests, setContests] = useState(null);
+  const [error, setError] = useState("");
 
-  // Define currentTime at the beginning
-  const currentTime = new Date();
-
-  // Function to check if a contest has started, ended, or not yet started
-  const getContestStatus = (contest) => {
-    if (currentTime < new Date(contest.startTime)) {
-      return `Start Time: ${new Date(contest.startTime).toLocaleString()}`;
-    } else if (currentTime > new Date(contest.endTime)) {
-      return 'Ended';
-    } else {
-      return `Started, Ends: ${new Date(contest.endTime).toLocaleString()}`;
-    }
-  };
-
-  // Use useEffect to fetch contest data when the component mounts
   useEffect(() => {
-    async function getContests() {
-      fetch('http://89.147.236.58:8000/api/contests', {
-        next: {
-          revalidate: 1,
-        },
-      })
-        .then((response) => response.json())
-        .then((data) => {
-          setContestData(data); // Set the contest data in state
-          setIsLoading(false); // Mark loading as complete
-        })
-        .catch((error) => {
-          console.error('Error fetching contest data:', error);
-          setIsLoading(false); // Mark loading as complete in case of error
-        });
-    }
-    getContests();
-  }, []); // Empty dependency array to run the effect once on mount
-
-  if (isLoading) {
-    // Render loading spinner in the center of the screen
-    return (
-      <div className="loadingContainer">
-        <div className="centered">
-          <LoadingAnimation />
-        </div>
-      </div>
-    );
-  }
+    api("/api/contests").then(setContests).catch((e) => setError(e.message));
+  }, []);
 
   return (
-    <main className="main">
-      <div className="contestContainer">
-        <p>Contests:</p>
-        {/* Map over contest data to generate contest cards */}
-        {contestData.map((contest) => (
-          <div key={contest._id}>
-            {currentTime > new Date(contest.endTime) ? (
-              // If the contest has ended, display a disabled contest card
-              <div className="contestCard disabled">
-                <div className="contestInfo">
-                  <h2>{contest.name}</h2>
-                  <p className="author">Author: {contest.author}</p>
-                </div>
-                <div className="contestTime">
-                  <p>{getContestStatus(contest)}</p>
-                </div>
-              </div>
-            ) : (
-              // If the contest is ongoing or not yet started, display an active contest card
-              <a href={`/contest/${contest._id}`} className="contestCard" key={contest._id}>
-                <div className="contestInfo">
-                  <h2>{contest.name}</h2>
-                  <p className="author">Author: {contest.author}</p>
-                </div>
-                <div className="contestTime">
-                  <p>{getContestStatus(contest)}</p>
-                </div>
-              </a>
-            )}
-          </div>
-        ))}
-      </div>
+    <main className="container page">
+      <section className="hero">
+        <span className="pill live">Programming contests</span>
+        <h1 style={{ marginTop: 14 }}>Solve problems. Submit C++. Climb the board.</h1>
+        <p className="muted">Join a live contest with the credentials from your organiser, read the problems and upload your solutions before the clock runs out.</p>
+      </section>
+
+      {error && <p className="alert">Could not load contests: {error}. Is the API running?</p>}
+      {!contests && !error && <div className="contest-list">{[0, 1, 2].map((i) => <div key={i} className="card skeleton" />)}</div>}
+      {contests && contests.length === 0 && <div className="card empty">No contests yet.</div>}
+      {contests &&
+        groups.map(([key, title]) => {
+          const list = contests.filter((c) => contestStatus(c).key === key);
+          if (!list.length) return null;
+          return (
+            <section key={key}>
+              <div className="section-head"><h2>{title}</h2><span className="muted">{list.length}</span></div>
+              <div className="contest-list">{list.map((c) => <ContestRow key={c._id} contest={c} />)}</div>
+            </section>
+          );
+        })}
     </main>
   );
 }

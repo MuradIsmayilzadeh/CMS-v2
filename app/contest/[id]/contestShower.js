@@ -1,248 +1,131 @@
-import React, { useEffect, useState } from 'react';
-import './shower.css';
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { api, API_URL, contestStatus, formatDuration, fmtDate } from "../../lib/api";
 
-export default function ContestShower({ contestId }) {
-  const [contest, setContest] = useState({});
-  const [remainingTime, setRemainingTime] = useState(0);
-  const [selectedQuestion, setSelectedQuestion] = useState(null);
-  const [results, setResults] = useState({});
+export default function ContestShower({ contestId, session, onLogout }) {
+  const [contest, setContest] = useState(null);
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [selected, setSelected] = useState(null);
+  const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [userSubmissions, setUserSubmissions] = useState([]); // Store user-specific submissions
+  const [notice, setNotice] = useState(null);
 
-  // Function to calculate remaining time
-  const calculateRemainingTime = (endTime) => {
-    const currentTime = new Date().getTime();
-    const timeDifference = endTime - currentTime;
-    console.log(endTime )
-    return timeDifference > 0 ? timeDifference : 0;
-  };
+  const load = useCallback(() => api(`/api/contest/${contestId}`).then(setContest).catch((e) => setError(e.message)), [contestId]);
 
+  useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const fetchContestData = async () => {
-      try {
-        const response = await fetch(`http://89.147.236.58:8000/api/contest/${contestId}`, {
-          next: {
-            revalidate: 1,
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP Error: ${response.status}`);
-        }
-        const contestData = await response.json();
-        setContest(contestData);
-      } catch (error) {
-        console.error('Error fetching contest data:', error);
-      }
-    };
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-    fetchContestData();
-  }, [contestId]);
+  if (error) return <main className="container page"><p className="alert">{error}</p></main>;
+  if (!contest) return <main className="container page"><div className="card skeleton" /></main>;
 
-  useEffect(() => {
-    if (contest && contest.endTime) {
-      const endTime = new Date(contest.endTime).getTime();
-      const interval = setInterval(() => {
-        setRemainingTime(calculateRemainingTime(endTime));
-      }, 1000);
-
-      setRemainingTime(calculateRemainingTime(endTime));
-      console.log(endTime)
-
-      return () => {
-        clearInterval(interval);
-      };
-    }
-  }, [contest]);
-
-  const handleSidebarButtonClick = (buttonType) => {
-    if (buttonType === 'home') {
-      setSelectedQuestion(null);
-      setResults({});
-      setUserSubmissions([]);
-    }
-  };
-
-  const handleQuestionSelect = (questionId) => {
-    setSelectedQuestion(questionId);
-    setResults({});
-    setUserSubmissions([]); // Clear user-specific submissions when changing questions
-  };
-
-  const handleDownloadCondition = () => {
-    const conditionUrl = contest.questions.find((q) => q.questionId === selectedQuestion)?.conditionUrl;
-    if (conditionUrl) {
-      window.open(conditionUrl, '_blank');
-    }
-  };
-
-  const handleDownloadFile = (filePath) => {
-    window.open(`http://89.147.236.58:8000/files/${filePath}`, '_blank');
-  };
-
-  // Handle file input change
-  const handleResultChange = (event) => {
-    const questionId = selectedQuestion;
-    const file = event.target.files[0];
-
-    setResults({ ...results, [questionId]: file });
-  };
-
-  const handleSubmitFile = async () => {
-    try {
-      if (!results[selectedQuestion]) {
-        alert('Please select a file before submitting.');
-        return;
-      }
-
-      const userId = localStorage.getItem('contestAuthToken');
-      const reader = new FileReader();
-
-      // Create an object to send to the server
-      const requestData = {
-        userId,
-        questionId: selectedQuestion,
-        fileContent: reader.readAsText(results[selectedQuestion]), // Send the file content as a string
-      };
-      const response = await fetch(`http://89.147.236.58:8000/api/contest/${contest._id}/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData), // Send the data as JSON
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
-      }
-
-      setSelectedQuestion(null);
-      setResults({});
-      setSubmitting(false);
-
-      alert('File submitted successfully!');
-    } catch (error) {
-      console.error('Error submitting file:', error);
-      setSubmitting(false);
-    }
-  };
-
-  useEffect(() => {
-    // Update user-specific submissions when selectedQuestion changes
-    if (selectedQuestion !== null) {
-      const userId = localStorage.getItem('contestAuthToken');
-      const user = contest.allowedUsers.find((user) => user.userId === userId);
-      if (user) {
-        const userSubmissionsForQuestion = user.submissions.filter((s) => s.questionId === selectedQuestion);
-        setUserSubmissions(userSubmissionsForQuestion);
-      }
-    } else {
-      setUserSubmissions([]);
-    }
-  }, [selectedQuestion, contest]);
-
-  if (!contest) {
-    return <div>No contest data available.</div>;
-  }
-
+  const status = contestStatus(contest, now);
   const questions = contest.questions || [];
+  const me = contest.allowedUsers.find((u) => u.userId === session.userId);
+  const mySubs = (me?.submissions || []).slice().reverse();
+  const question = questions.find((q) => q.questionId === selected);
+  const subsFor = (qid) => mySubs.filter((s) => s.questionId === qid);
+
+  const submit = async () => {
+    if (!file) return setNotice({ ok: false, text: "Choose a .cpp file first." });
+    setSubmitting(true);
+    setNotice(null);
+    try {
+      const form = new FormData();
+      form.append("questionId", selected);
+      form.append("file", file);
+      await api(`/api/contest/${contestId}/submit`, { method: "POST", body: form, token: session.token });
+      setFile(null);
+      setNotice({ ok: true, text: "Solution submitted! It will be graded shortly." });
+      load();
+    } catch (e) {
+      if (e.message.includes("log in")) onLogout();
+      setNotice({ ok: false, text: e.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="contest-container">
-            <div className="sidebar">
-            <h2>Home</h2>
-            <button className="home-button" onClick={() => handleSidebarButtonClick('home')}>
-              Home
-            </button>
-            <h2>Questions</h2>
-            <ul>
-              {questions.map((question) => (
-                <li key={question.questionId}>
-                  <button
-                    className={`question-button ${selectedQuestion === question.questionId ? 'selected' : ''}`}
-                    onClick={() => handleQuestionSelect(question.questionId)}
-                  >
-                    {question.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="content">
-            {selectedQuestion === null ? (
+    <main className="container arena">
+      <aside className="card sidebar">
+        <button className={`side-btn ${selected === null ? "active" : ""}`} onClick={() => setSelected(null)}>🏠 Overview</button>
+        <h4>Problems</h4>
+        {questions.length === 0 && <p className="muted" style={{ fontSize: 14, margin: "0 8px" }}>No problems yet.</p>}
+        {questions.map((q) => (
+          <button key={q.questionId} className={`side-btn ${selected === q.questionId ? "active" : ""}`} onClick={() => { setSelected(q.questionId); setFile(null); setNotice(null); }}>
+            <span className="qid">{q.questionId}</span>
+            {q.name}
+            {subsFor(q.questionId).length > 0 && <span className="count">{subsFor(q.questionId).length}</span>}
+          </button>
+        ))}
+        <h4>Signed in</h4>
+        <div className="side-btn" style={{ cursor: "default" }}>👤 {session.username}</div>
+        <button className="side-btn" onClick={onLogout}>↩ Leave contest</button>
+      </aside>
+
+      <section className="card panel">
+        {!question ? (
+          <>
+            <span className={`pill ${status.key}`}>{status.label}</span>
+            <h1>{contest.name}</h1>
+            <p className="muted">{contest.description}</p>
+            <div className="timer">
+              <div className="timer-label">{status.key === "upcoming" ? "Starts in" : status.key === "live" ? "Time remaining" : "Contest finished"}</div>
+              <div className="timer-value">
+                {status.key === "upcoming" && formatDuration(new Date(contest.startTime) - now)}
+                {status.key === "live" && formatDuration(new Date(contest.endTime) - now)}
+                {status.key === "ended" && "00:00:00"}
+              </div>
+            </div>
+            <div className="stat-grid">
+              <div className="stat"><span>Author</span><strong>{contest.author}</strong></div>
+              <div className="stat"><span>Problems</span><strong>{questions.length}</strong></div>
+              <div className="stat"><span>Starts</span><strong>{fmtDate(contest.startTime)}</strong></div>
+              <div className="stat"><span>Ends</span><strong>{fmtDate(contest.endTime)}</strong></div>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="qid">{question.questionId}</span>
+            <h1>{question.name}</h1>
+            {question.conditionUrl ? (
+              <a className="btn" href={question.conditionUrl} target="_blank" rel="noopener noreferrer">📄 Open problem statement</a>
+            ) : (
+              <p className="muted">The problem statement will be shared by the organiser.</p>
+            )}
+
+            {status.key === "live" ? (
               <>
-                <h1>{contest.name}</h1>
-                <p>{contest.description}</p>
-                <p>Author: {contest.author}</p>
-                {remainingTime > 0 && (
-                  <div className="remaining-time">
-                    <h2>Remaining Time:</h2>
-                    <div className="cool-watch">{formatRemainingTime(remainingTime)}</div>
-                  </div>
-                )}
+                <label className="dropzone">
+                  <input type="file" accept=".cpp,.cc,.cxx" onChange={(e) => setFile(e.target.files[0] || null)} />
+                  <strong>{file ? file.name : "Choose your .cpp solution"}</strong>
+                  <span className="muted" style={{ fontSize: 13 }}>{file ? `${(file.size / 1024).toFixed(1)} KB` : "C++ source, up to 10 MB"}</span>
+                </label>
+                <button className="btn btn-primary" onClick={submit} disabled={submitting || !file}>{submitting ? "Submitting…" : "Submit solution"}</button>
               </>
             ) : (
-              <div className="question-content">
-                <h2>Question: {selectedQuestion}</h2>
-                <button className="download-condition-button" onClick={handleDownloadCondition}>
-                  Download Condition PDF
-                </button>
-                <div className="result-input">
-                  <label htmlFor={selectedQuestion}>Upload .cpp File for {selectedQuestion}:</label>
-                  <input
-                    type="file"
-                    id={selectedQuestion}
-                    accept=".cpp"
-                    onChange={handleResultChange}
-                  />
-                </div>
-                <button className="submit-button" onClick={handleSubmitFile} disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'Submit File'}
-                </button>
-                <div className="submissions">
-                  {userSubmissions.map((submission, index) => (
-                    <div className="submission-container" key={`${submission.questionId}_${index}`}>
-                      {submission.username}
-                      <div className="submission-info"></div>
-                      <div className="submission">
-                        <div className="submission-percentage">
-                          {submission.result}%
-                        </div>
-                        <div className="submission-file">
-                          <button onClick={() => handleDownloadFile(submission.filePath)}>
-                            Download and Install
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <p className="alert" style={{ marginTop: 20 }}>{status.key === "upcoming" ? "Submissions open when the contest starts." : "This contest has ended. Submissions are closed."}</p>
             )}
-          </div>
-    </div>
+            {notice && <p className={`alert ${notice.ok ? "ok" : ""}`} style={{ marginTop: 14 }}>{notice.text}</p>}
+
+            <div className="subs">
+              <h3>Your submissions</h3>
+              {subsFor(question.questionId).length === 0 && <p className="muted" style={{ fontSize: 14 }}>No submissions yet.</p>}
+              {subsFor(question.questionId).map((s, i) => (
+                <div key={s._id || i} className="sub">
+                  <span className="mono">{s.submittedAt ? fmtDate(s.submittedAt) : `#${i + 1}`}</span>
+                  <span className="result">{/^\d+$/.test(String(s.result)) ? `${s.result}%` : s.result || "Pending"}</span>
+                  <a className="link" href={`${API_URL}/api/files/${encodeURIComponent(s.filePath.replace(/^files\//, ""))}`}>Download</a>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </main>
   );
-}
-
-function formatRemainingTime(remainingTime) {
-  const days = Math.floor(remainingTime / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((remainingTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((remainingTime % (1000 * 60)) / 1000);
-
-  const formattedTime = [];
-
-  if (days > 0) {
-    formattedTime.push(`${days} ${days === 1 ? 'day' : 'days'}`);
-  }
-  if (hours > 0) {
-    formattedTime.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-  }
-  if (minutes > 0) {
-    formattedTime.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-  }
-  if (seconds > 0) {
-    formattedTime.push(`${seconds} ${seconds === 1 ? 'second' : 'seconds'}`);
-  }
-
-  return formattedTime.join(' ');
 }
